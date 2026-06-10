@@ -92,29 +92,48 @@ function reset(){
   ship={ring:0,r:RINGS[0],a:-Math.PI/2,dir:1,shield:false,jumpCD:0};
   obstacles=[];gems=[];parts=[];trail=[];
   t=0;score=0;combo=1;comboT=0;shake=0;flash=0;slowmo=1;overT=0;newBest=false;
-  spawnT=1.2;gemT=0.8;beatT=0;beatN=0;hue=210;
+  spawnT=1.5;gemT=0.8;beatT=0;beatN=0;hue=210;
 }
 reset();
 
 function ringR(i){return RINGS[i];}
 function angNorm(a){a%=TAU;return a<0?a+TAU:a;}
 function angDiff(a,b){let d=(a-b)%TAU;if(d>Math.PI)d-=TAU;if(d<-Math.PI)d+=TAU;return d;}
-function diffLv(){return Math.min(1,t/100);}
+function diffLv(){return Math.min(1,t/140);}
 function P(r,a){return [CX+Math.cos(a)*r*S,CY+Math.sin(a)*r*S];}
 
 /* ---------- spawning ---------- */
+function ringBlocked(ring,theta,margin){
+  for(const o of obstacles){
+    if(o.ring!==ring)continue;
+    const rel=angNorm(theta-o.a0);
+    if(rel<o.span+margin||rel>TAU-margin)return true;
+  }
+  return false;
+}
+// 全アークは同一角速度で回るため相対配置は不変。
+// よって生成時に「3リング同時封鎖（壁）がない」ことを保証すれば、その後も壁は生まれない。
 function spawnObstacle(){
   const d=diffLv();
-  const ring=Math.floor(Math.random()*3);
-  const span=0.5+Math.random()*(0.8+0.7*d);
-  const w=(0.15+Math.random()*(0.25+0.45*d))*(Math.random()<0.5?-1:1);
-  let a0=Math.random()*TAU;
-  if(ring===ship.ring){
-    const center=a0+span/2;
-    const ahead=ship.a+ship.dir*0.9;
-    if(Math.abs(angDiff(center,ahead))<span/2+0.9)a0+=Math.PI;
+  if(obstacles.length>=3+Math.round(5*d))return;
+  for(let attempt=0;attempt<12;attempt++){
+    const ring=Math.floor(Math.random()*3);
+    let cov=0,cnt=0;
+    for(const o of obstacles)if(o.ring===ring){cov+=o.span;cnt++;}
+    const span=0.45+Math.random()*(0.5+0.5*d);
+    if(cnt>=3||cov+span>0.5*TAU)continue;
+    const a0=Math.random()*TAU;
+    if(ring===ship.ring&&Math.abs(angDiff(a0+span/2,ship.a+ship.dir*0.9))<span/2+1.0)continue;
+    const others=[0,1,2].filter(r=>r!==ring);
+    let wall=false;
+    for(let s=-0.45;s<=span+0.45;s+=0.12){
+      const th=angNorm(a0+s);
+      if(ringBlocked(others[0],th,0.45)&&ringBlocked(others[1],th,0.45)){wall=true;break;}
+    }
+    if(wall)continue;
+    obstacles.push({ring,a0:angNorm(a0),span,life:0,maxLife:9+Math.random()*5});
+    return;
   }
-  obstacles.push({ring,a0:angNorm(a0),span,w,life:0,maxLife:16+Math.random()*8});
 }
 function spawnGem(){
   if(gems.length>=4)return;
@@ -173,12 +192,12 @@ function update(dt){
     comboT-=dt;if(comboT<=0)combo=1;
     // ship motion
     ship.jumpCD=Math.max(0,ship.jumpCD-dt);
-    ship.a=angNorm(ship.a+(1.25+1.0*d)*ship.dir*dt);
+    ship.a=angNorm(ship.a+(1.15+0.95*d)*ship.dir*dt);
     ship.r+=(ringR(ship.ring)-ship.r)*Math.min(1,dt*9);
     trail.push({r:ship.r,a:ship.a,life:0.45});
     // spawning
     spawnT-=dt;
-    if(spawnT<=0){spawnT=1.5-1.0*d+Math.random()*0.3;spawnObstacle();}
+    if(spawnT<=0){spawnT=2.0-1.2*d+Math.random()*0.4;spawnObstacle();}
     gemT-=dt;
     if(gemT<=0){gemT=2.2-0.8*d+Math.random();spawnGem();}
     // music beat
@@ -231,9 +250,10 @@ function update(dt){
     }
   }
   // world (runs in all states for visuals)
+  const arcW=0.10+0.30*diffLv();
   for(let i=obstacles.length-1;i>=0;i--){
     const o=obstacles[i];
-    o.a0=angNorm(o.a0+o.w*dt);
+    o.a0=angNorm(o.a0+arcW*dt);
     o.life+=dt;
     if(o.life>o.maxLife)obstacles.splice(i,1);
   }
@@ -397,6 +417,14 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// 自動テスト用フック（ゲームプレイには影響しない）
+window.__OB={
+  get s(){return{state,t,score,ship:{ring:ship.ring,a:ship.a,r:ship.r,dir:ship.dir},
+    obstacles:obstacles.map(o=>({ring:o.ring,a0:o.a0,span:o.span,life:o.life}))};},
+  act:action,
+  setT(v){t=v;}
+};
 })();
 </script>
 </body>
